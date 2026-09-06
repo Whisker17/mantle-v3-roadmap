@@ -1,0 +1,18 @@
+- 从 Solana 的 gmgn 入手，先来讲解一下 meme Launchpad 的整体运作流程和逻辑
+  - 比如什么 bonding curve 之类的机制，以及毕业机制等（有且不限于这些，我需要一个完整的 Launchpad 详解）
+- 接下来还第二代的 meme Launchpad，主要就是 bsc 的 four.meme 和 base 上的，我需要你详细介绍的是他们的创新点以及优势，为什么 meme 的流量逐渐走到了这两条链上
+- 然后是 Robinhood Chain，我希望你介绍的是 RH 上独有的 meme Launchpad 机制和产品，比如 Pons，Pair 这种最新的玩法，我需要非常详细的详解，然后也需要解析一下他们的 stocks 的结合点（因为我需要和 Mantle 最新的 mStocks 结合，我主要是为了给 Mantle 生态出建议，关于 mStocks 我建议你直接把它类比成 Binance 的 bStocks，两者基本一样，只不过换成了 Bybit 和 Mantle）
+- 与 Mantle 目前的 meme Launchpad 做一下对比，看一下它的欠缺点是什么
+- 分析一下 Mantle 上没有跑起来的原因，分两部分 
+  - meme Launchpad 产品的缺陷
+  - Mantle 链 Infra 的缺点
+    - 然后我需要你衍生出来 meme Launchpad 对链 infra 有哪些需求，或者说什么样的链以及什么样的特性对于 meme Launchpad 是有推进作用的，比如我这边给出几个点（我需要你再深入挖掘一下）
+      - 瞬时执行容量  
+      - 热点争用隔离  
+        - LFM in EVM（参考 Solana 的 local fee market）
+          - 弹性可调节区块空间是否可实现
+      - 发行与流动性组合（bonding curve/AMM）  
+        - bonding curve 的好处是什么
+        - meme 的毕业后锁定流动性机制
+      - 机器化交易生态是否成熟（PRC/bot/MEV/钱包）
+- 最后我希望你可以给出一个在 Mantle 上可行的 meme Launchpad 设计，主要是为了 mStocks 资产，所以你可以大量参考 Robinhood Chain 上的相关产品
