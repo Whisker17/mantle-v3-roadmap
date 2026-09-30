@@ -1,0 +1,11 @@
+# Repo-local OMP roles. Does not change ~/.omp/agent/config.yml.
+# default = orchestrator, slow = deep research, smol/task = simple code.
+modelRoleStorage: project
+modelRoles:
+  slow: anthropic/claude-fable-5:xhigh
+  smol: anthropic/claude-sonnet-5
+  task: anthropic/claude-sonnet-5
+cycleOrder:
+  - smol
+  - default
+  - slow

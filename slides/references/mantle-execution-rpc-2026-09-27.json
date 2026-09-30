@@ -1,0 +1,33 @@
+{
+  "retrieved_at_utc": "2026-09-27T16:31:10.315354+00:00",
+  "endpoint": "https://rpc.mantle.xyz",
+  "chain": {
+    "jsonrpc": "2.0",
+    "result": "0x1388",
+    "id": 1
+  },
+  "latest": {
+    "jsonrpc": "2.0",
+    "result": {
+      "number": "0x608295d",
+      "hash": "0x9a4fef701be64537cd3b207a62c1df29b24b31b6c463ce246a20785eb62cf9e7",
+      "parentHash": "0x0b15cfcf8beabfdb1dfe73e397a365a3a4fea2af31bafbc15ff80d34b69aa6ac",
+      "timestamp": "0x6ab944c2",
+      "gasLimit": "0x3938700",
+      "gasUsed": "0xe09b"
+    },
+    "id": 1
+  },
+  "previous": {
+    "jsonrpc": "2.0",
+    "result": {
+      "number": "0x60828f9",
+      "hash": "0x2ad47c54a7a0e9ad3688c7f230e62b94e39f9b3d7caba0d3e115d8f1064f810f",
+      "parentHash": "0x14ca54ca4b7408d96ffe7ee69268c9989e200ac70a79a07d5566e6dc61461dcd",
+      "timestamp": "0x6ab943fa",
+      "gasLimit": "0x3938700",
+      "gasUsed": "0xb4e7"
+    },
+    "id": 1
+  }
+}

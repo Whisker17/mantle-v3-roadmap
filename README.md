@@ -1,188 +1,201 @@
-# Meme Launchpad 深度研究：从 Solana 到 Robinhood Chain，以及 Mantle 该怎么做
+# Mantle v3 路线图：CeDeFi Capital Markets 叙事重构与全栈架构
 
-> **研究日期**：2026-09-06
-> **目的**：为 Mantle 生态提供关于 meme Launchpad 的完整分析与可执行设计建议，重点结合 Mantle 的代币化股票资产（用户称 "mStocks"，实为 **xStocks**）。
-> **方法**：6 条并行研究轨道 + 大量链上直接读取。标 `【实测】`/`[链上]` 的数据为直接调用 RPC / 合约 / API 得到，可复现。
-
----
-
-## 📖 报告结构
-
-| 章节 | 内容 | 篇幅 |
-|---|---|---|
-| **[第一部分：Solana 基线](report/01-solana-baseline.md)** | 从 GMGN 看懂 meme 交易四层栈；pump.fun bonding curve 的精确数学（链上解码）；完整生命周期；费用体系演进；MEV；Solana infra 为何适配 meme | 16K |
-| **[第二部分：第二代 —— BSC 与 Base](report/02-gen2-bsc-base.md)** | four.meme 的可插拔计价资产（**已跑通 meme × 代币化美股**）、OpenFour、Binance 白标关系；Base 的创作者经济兴衰（**官方已公开否定**）；Clanker/Zora/Flaunch 的可抄机制 | 26K |
-| **[第三部分：Robinhood Chain](report/03-robinhood-chain.md)** | 链架构与 FCFS 排序；Stock Tokens 的 ERC-8056 multiplier；**Pons 工程级拆解**；**PAIR 的股票代币 quote 机制**；三起真实休市事故；AMC 监管风暴；给 Mantle 的五条硬约束 | 37K |
-| **[第四部分：Mantle 现状与失败归因](report/04-mantle-gap-analysis.md)** | **术语澄清（mStocks 不存在）**；停止错误诊断；链是空的；**执行层零覆盖**；两次 meme 尝试的死亡；七条归因；六张独有底牌 | 21K |
-| **[第五部分：链 Infra 需求框架](report/05-infra-requirements.md)** | 14 维需求框架；**LFM in EVM 的四层可实现性阶梯**；弹性区块空间的三个子问题；抗狙击四范式；RWA quote 的四项额外要求 | 22K |
-| **[第六部分：Mantle 设计方案](report/06-mantle-design-proposal.md)** | **Tape 协议**：五个设计前提、三张底牌、完整机制设计、**两个无人实现的机制创新**、分阶段路线图、风险登记表 | 28K |
-
-**研究底稿**（每一份都比上面的章节更详细，含更多原始数据与来源）：
-| 文件 | 内容 | 规模 |
-|---|---|---|
-| [`research/A-solana-pumpfun.md`](research/A-solana-pumpfun.md) | Solana 全栈，含链上解码的曲线常数、25 档 Ascend 费率阶梯、MigrateV2 交易逐指令分解 | 964 行 |
-| [`research/B-bsc-fourmeme.md`](research/B-bsc-fourmeme.md) | BSC/four.meme，含生产 API 快照、Helper3 链上读取、LiquidityAdded 事件实测 | 673 行 |
-| [`research/C-base.md`](research/C-base.md) | Base 生态，含 Clanker/Zora/Flaunch 完整合约级拆解、逐月数据序列、v4 hooks 14-flag 表 | 1,498 行 |
-| [`research/D-robinhood.md`](research/D-robinhood.md) | Robinhood Chain，含 Pons/PAIR 源码级拆解、链上代币销毁量直读、监管争议原话 | 1,116 行 |
-| [`research/E-mantle.md`](research/E-mantle.md) | Mantle 全面盘点，含 RPC 实测参数、TVL 崩塌序列、28 个 DEX 全表、36 项存疑清单 | 954 行 |
-| [`research/F-infra-and-mechanism-notes.md`](research/F-infra-and-mechanism-notes.md) | 链 infra 与曲线机制的独立采集 | — |
-| [`research/G-mstocks-design-inputs.md`](research/G-mstocks-design-inputs.md) | xStocks 可组合性约束、Fluxion RFQ、代币化 IPO | — |
+> **项目名称**：`mantlev3-roadmap`  
+> **核心叙事**：**CeDeFi Capital Markets（链上资本市场）**  
+> **战略 Tagline**：**Where Assets Go Public（万物上市）**  
+> **核心破局点**：承认历史，完成闭环 —— 将 Mantle 从沉淀了 $576M 资金却无处交易的「链上银行」，重构为集**一级发行、二级做市、现货交易、全天候衍生品、杠杆借贷与最终清算**于一体的完整「链上资本市场」。
 
 ---
 
-## 🎯 一页纸执行摘要
+## 1. 架构总览：三位一体的模块化体系
 
-### 全报告最重要的六条结论
+本仓库按照「**核心宏观叙事总纲 ──► 产品矩阵与专属链优化 ──► 交易所动力挂斗（Sidecar）**」三层结构进行系统性规划：
 
-**① 「meme × 代币化股票」已经不是空白市场，而是有两个生产实现的既有赛道。**
-- **Robinhood Chain**：PAIR（24 只股票白名单 quote）与 LONG（单股票配对）。**NVDA 配对池的流动性是同一代币 WETH 池的 3 倍以上** —— 交易者用真金白银投票认可这个形态。
-- **BNB Chain**：four.meme 的 **8 个 bStocks 已 PUBLISH**；**链上实测的 6 笔毕业里 5 笔是 bStocks 计价**。
-- **→ 问题不是"可不可行"，而是"凭什么在 Mantle 做"。**
-
-**② Mantle 的失败原因不是"慢"也不是"贵"，是执行层零覆盖 + 分发被 CeFi 截流。**
-- 【实测】出块 **2.000s**、区块填充率 **0.173%**、base fee 常年钉在 **50 gwei 下限**（EIP-1559 从未触发）、单笔 swap **$0.004–0.009**
-- **GMGN / Photon / BullX / Axiom / Trojan / Banana Gun / Maestro 全部不支持 Mantle**；**Phantom 不支持**
-- GMGN 的链列表里有 Monad、MegaETH、X Layer、Robinhood Chain —— **唯独没有 Mantle**
-- **Bybit Alpha 的设计目标就是让用户不必上链** —— Mantle 最大的用户漏斗，恰恰是它链上活跃度的最大抑制器
-
-**③ Mantle 试过两次 meme，都是砸钱试的，都在 2026 年 8 月同一周关停。**
-- **Funny Money**（2025-02 上线，**100 万 MNT 奖池**，明写 "harness the virality of meme culture"）→ **2026-08-16 关停**
-- **Printr**（Bybit Venture Studio + Mantle EcoFund 背书，融资 **$4.5M**）→ **2026-08-18 关停**
-- **→ "为什么没跑起来"不能写成"没人试过"**
-
-**④ 但 Mantle 手里有三张别人没有的牌。**
-- **Fluxion 的 Atomic RFQ**：开市锚定实时价、近乎无滑点；休市切 AMM 维持 24/7 —— **RH Chain 与 BSC 都没有对位物，而它恰好解决了 RWA×meme 最难的问题**
-- **xStocks 规模全球第 2（$633.7M，是 Robinhood 的 4.8 倍）**、155 个标的、可自由转账 ERC-20
-- **mETH/cmETH 生息基础设施** + 链上 **$576M 闲置稳定币**（是链上 DeFi TVL 的 5.9 倍）
-
-**⑤ 有两个机制空白全行业无人填补，Mantle 可以独占。**
-- **休市/周末的价格纪律**：RH Chain 已发生 HIMS **4.6 倍**、AMC **35 倍**的周末背离事故，**至今零协议级熔断**
-- **公司行动的池层适配**：股票代币层有 multiplier，**但池层没有任何再平衡逻辑**（Robinhood 自己标注为"未解决的开放风险"）
-
-**⑥ 「热点争用隔离 / LFM in EVM」对 Mantle 是"成功后的问题"，不是"现在的问题"。**
-- Mantle 填充率 0.173%，**现在做 LFM 是无病呻吟**
-- 但 Robinhood Chain 的反面教材极其鲜明：meme 让 base fee **11 天涨 82 倍**，Yakovenko 称其模型 "brain-dead"
-- **→ v1 不做，但 v1 架构必须为 v2 留好接口**
-
----
-
-## 📊 关键数字速查
-
-### Launchpad 手续费横向对比（DefiLlama，2026-09-06 链上直取）
-
-| 协议 | 链 | 24h | 30d | **累计** |
-|---|---|---|---|---|
-| **pump.fun** | Solana | $679,806 | $47.04M | **$1,210.68M** |
-| **Pons（V1+V2）** | Robinhood | **~$9.05M** | ~$55.3M | **$72.48M** |
-| four.meme | BSC | $9,578 | $290K | $98.05M |
-| clanker | Base 等 | $8,965 | $283K | $90.82M |
-| Bags | Solana + RH | $30,603 | $1.81M | $64.00M |
-| **Flap.sh** | BSC 等 | **$2,884,424** | $20.02M | $34.88M |
-| NOXA Fun | 多链 | $96,904 | $3.62M | $21.70M |
-| LetsBonk | Solana | $4,921 | $64,831 | $15.93M |
-| Zora Coins | Base | — | $15,067 | $10.43M |
-| Flaunch | Base | $28.93 | $389.64 | $3.59M |
-| **PAIR** | Robinhood | $52,112 | $433,275 | **$433,275** |
-
-**Pons V2 的 31 天曲线**：$31,868（08-04 首日）→ **$8,750,574（09-04 峰值）= 275 倍**
-⚠️ **但建立在 2026-09-29 到期的 gas 补贴之上，任何推演都必须做补贴退出压力测试。**
-
-### 链级对比（2026-09-06）
-
-| 链 | 24h DEX 量 | 30d DEX 量 | 日活跃地址 | TVL |
-|---|---|---|---|---|
-| Solana | $1.915B | $62.08B | 2.03M | $5.925B |
-| **Robinhood Chain** | **$1.53–1.61B** | $24.12B | — | $908.65M |
-| Base | $589.22M | $24.16B | 238,687 | $5.669B |
-| BSC | $1.555B | $33.14B | 1.96M | $5.792B |
-| **Mantle** | **$0.94M** | **$67.2M** | **991–2,306** | **$97.84M** |
-
-> **Mantle 的 24h DEX 量是 Robinhood Chain 的 1/1,630。**
-> **但稳定币供应只落后 Base 8.5 倍 —— Mantle 有钱，没有交易行为。这不是资本问题，是产品与分发问题。**
-
-### 代币化股票市场（rwa.xyz，2026-09-05，全球总规模 $2.91B）
-
-| 发行方 | 市值 | 特点 |
-|---|---|---|
-| Ondo Global Markets | **$869.6M** | 第 1 |
-| **bStocks（Binance/BTech）** | **$659.4M** | **自营发行；2026-06-11 上线，7 周 AUM 破 $500M、46+ 标的、市场份额 45–50%** |
-| **xStocks（Backed，Mantle/Bybit）** | **$633.7M** | **2025-11-07 上 Mantle，早 7 个月；155 个标的** |
-| Robinhood（RHJ） | $133.2M | **市值第 6，但链上交易量与 DeFi 组合度第 1** |
-| Dinari dShares | $11.2M | 唯一有股东权利 |
+```
+ ┌──────────────────────────────────────────────────────────────────────────────────────────┐
+ │                                   【母目录 1】宏观叙事与总路由                             │
+ │   narrative/ (CeDeFi Capital Markets 核心战略总纲，阐明从链上银行到资本市场，并路由至各产品)│
+ └────────────────────────────────────────────┬─────────────────────────────────────────────┘
+                                              │
+                     ┌────────────────────────┴────────────────────────┐
+                     │ 全景产品矩阵 (每个产品均内嵌专属定制的 Chain-Infra 优化)│
+                     ▼                                                 ▼
+ ┌──────────────────────────────────────────┐      ┌──────────────────────────────────────────┐
+ │ 支柱 1：发行层                           │      │ 支柱 2：现货交易层                       │
+ │ meme-launchpad/                          │      │ rfq-propamm/                             │
+ │ ├─ Tape (股票 quote 情绪一级市场)        │      │ ├─ Fluxion RFQ (全资产私有库存报价)      │
+ │ ├─ benchmarks/ (Solana/BSC/Base/RH)      │      │ └─ chain-infra/ (无公开mempool/Cancel优先│
+ │ └─ chain-infra/ (转账钩子/出块解耦)      │      │                 Flashblocks预确认流)     │
+ └──────────────────────────────────────────┘      └──────────────────────────────────────────┘
+                     │                                                 │
+                     ▼                                                 ▼
+ ┌──────────────────────────────────────────┐      ┌──────────────────────────────────────────┐
+ │ 支柱 3：衍生品层                         │      │ 支柱 4：融资借贷层                       │
+ │ perps/                                   │      │ lending/                                 │
+ │ ├─ 股票 Perps (休市定价即产品/基差套利)  │      │ ├─ Margin Lending (xStocks/mETH 质押借贷)│
+ │ └─ chain-infra/ (清算通道/模拟免拒/原子化│      │ └─ chain-infra/ (市场日历/周末动态折价)  │
+ │                 RISE 1.5Ggas CLOB实测)   │      └──────────────────────────────────────────┘
+ └──────────────────────────────────────────┘                          │
+                     │                                                 │
+                     └────────────────────────┬────────────────────────┘
+                                              ▼
+ ┌──────────────────────────────────────────────────────────────────────────────────────────┐
+ │ 支柱 5：接口与分发层                                                                     │
+ │ terminal/                                                                                │
+ │ ├─ Tape Terminal (自建原生战壕面板/安全审计) + Bybit Alpha 白标端                        │
+ │ └─ chain-infra/ (Mantle Passport Passkey 登录 + ERC-4337 Paymaster 全免 Gas)             │
+ └────────────────────────────────────────────┬─────────────────────────────────────────────┘
+                                              │
+                                              ▼
+ ┌──────────────────────────────────────────────────────────────────────────────────────────┐
+ │                                   【母目录 2】外部动力系统挂斗                           │
+ │   sidecar/ (Bybit CeDeFi 全栈协同：W1 经纪商 + W2 做市商 + W3 自营发行 + W4 UTA 保证金)  │
+ └──────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 🔑 20 条可执行结论
+## 2. 核心叙事弧线：从「链上银行」到「链上资本市场」
 
-### 关于机制设计
+### 2.1 过去三年：建成了买方，却缺少市场
+过去三年，Mantle 投入巨资（EcoFund $2 亿、Methamorphosis、Journey 2,500 万 MNT）建成了完备的买方资产库：
+- **全球第 2 大代币化股票资产库**：155 个 xStocks 标的，AUM 达 **$633.7M**（是 Robinhood 链上规模的 4.8 倍）；
+- **雄厚资金沉淀**：**$576M 闲置稳定币**（为链上 DeFi TVL 的 5.9 倍），mETH / cmETH 生息资产，UR 新银行入口；
+- **历史归因**：过去的激励机制全部为质押与锁仓，**「奖励不动的钱」，从未建立起「奖励交易的飞轮」**，导致链上有钱却无市场，日均 DEX 交易量长期低至 **$0.94M**。
 
-1. **bonding curve 的三个自由度一旦选定，其余全部锁死。** pump.fun 的 `30 SOL / 1.073B / 793.1M` 唯一确定了 `85.005359 SOL` 与 `410.88 SOL`。
-2. **曲线是极度前置倾斜的 —— 前 30 SOL（35% 募资）卖掉 53.65% 供应。这是 sniper 军备竞赛的数学根源，不是治理问题。**
-3. **毕业不应带来用户可感知的成本跳变**（pump.fun Ascend tier 0 上界 420 SOL 恰好高于毕业市值 410.88 SOL）。
-4. **毕业阈值应锚定美元门槛而非代币数量**（four.meme 把 24 BNB 降到 18 BNB 以维持 ~$1.2–1.8 万门槛恒定）。
-5. **"毕业迁移"是攻击面最集中的一步。** four.meme 用 $183K + 200 BNB 两次被黑买到教训，最终退回 V2。**最优解是 Pons V2：曲线用未来池的 quote 资产计价 → 毕业时零滑点、零预言机、零 MEV 窗口。**
-6. **流动性锁定应用「永久锁 + Fee Key NFT」**，而非 LP burn（burn 会孤儿化费用收益）。Pons 的 locker **不暴露 collectFees / 提取 / 任意调用**，可审计性优于黑洞地址。
-7. **抗狙击有四种范式**：硬延迟（烧掉 MEV）/ 拍卖（回流创作者但依赖排序语义）/ 衰减费（最通用）/ **额度门禁（不依赖出块时间）**。
-8. **Mantle 的 2 秒出块让衰减税失效**（15 秒只有 7–8 个区块 → 退化成阶梯函数）→ **必须用额度门禁（Flaunch Game Mode 式 spend-gate）**。
-9. **Progressive Bid Wall 优于市价回购** —— 市价回购必被夹，限价挂单 MEV 无从下手。**在薄流动性链上滑点损耗小一个数量级。**
-10. **quote 资产默认生息**（Flaunch flETH → Aave）是 Mantle 的天然优势（mETH/cmETH）。
+### 2.2 Mantle v3：建设卖方与场内，让钱动起来
+> **「银行聚集了钱，资本市场让钱动起来。」**
 
-### 关于 RWA × meme
-
-11. **公司行动必须用 ERC-8056 式 multiplier，绝不能 rebase** —— 否则第一次分红就会把永久锁仓 LP 套利抽干。**这是第一性约束。**
-12. **AP 的 mint/redeem 是唯一有效的锚定手段**（HIMS 事件中靠 Bitstamp 增发 4,000 枚救回 4.6 倍脱钩），**比任何 "peg guard" 都重要**。
-13. **一级市场 KYB 闸门 + 二级市场完全开放** 是整个飞轮的技术前提。若走封闭生态（bStocks 路线），第三方 launchpad 永远不会出现。
-14. **曲线阶段应尽量不依赖预言机** —— 休市时喂价冻结（Chainlink 股票 feed **24/5，休市无 heartbeat**），任何实时喂价依赖都会被陈旧价格套利。
-15. **必须有 sequencer 级合规过滤能力** —— 这是把证券型代币放上无许可 launchpad 的前置条件（Arbitrum 已产品化为 ArbOS Elara）。
-
-### 关于分发与生态
-
-16. **价值捕获排序是「接口层 > 协议层 > 链层」。** 三条独立证据：GMGN 占 RH Chain 40% DEX 量；Bankr 是 Base 三大协议之和的 3.9 倍；GMGN/Photon 收入与 pump.fun 同量级。**→ Mantle 必须自建执行层。**
-17. **成为白标发行引擎 > 求上币直通车。** four.meme 的真正杠杆是 Binance Wallet **"integrates four.meme's launch technology"**；而 "four.meme → Alpha → 现货" 只是 **4 个一次性运营案例**，不是制度化通道。
-18. **分发能买冷启动，买不到留存。** Base 用 $450K 和 13 个月证伪（Zora 日发币 54,000 → 422，**−99.2%**）；Jesse Pollak 原话 *"i was definitively wrong"*。
-19. **KPI 必须是「毕业数 × 毕业后 7 天存活率」，绝不是日发币量。** four.meme 日发币量只跌 14%，日收入跌 99%；Clanker 每枚币手续费从 $1,371 跌到 $53。
-20. **先发优势在 launchpad 赛道价值极低。** Noxa 拿下 RH Chain 65.8% 份额后 **16 天归零**，死因是基础设施承压 + 运营失能。**抗 bot 洪水的工程能力 > 机制创新。**
+新叙事不推翻历史，而是完成商业闭环：
+- **过去建买方**：银行入口、资管产品、生息沉淀；
+- **现在建卖方与场内**：一级发行（Tape）、二级做市（Fluxion RFQ）、全天候衍生品（股票 Perps）、杠杆融资（Margin Lending），并由 Bybit 作为 Sidecar 提供承销、做市与全球 8,000 万用户分发。
 
 ---
 
-## ⚠️ 必须核实的事项（在启动任何开发之前）
+## 3. 基础设施哲学：拒绝抽象空转，Chain Infra 必须为具体产品服务
 
-这三条不通过，第六部分的方案需要重做：
-
-1. **Mantle 侧 xStocks 的具体 mint/合约配置是否启用了 transfer hook 或黑白名单**
-   （Solana 侧使用 Token Extensions 的可编程合规能力；EVM 侧需单独确认）
-2. **Backed 的 "Multiplier" 机制是否等价于 ERC-8056（非 rebase）**
-   若是 rebase，整个永久锁仓 LP 模型会在第一次分红时崩溃
-3. **Backed / Bybit 是否接受 xStocks 被用作第三方 permissionless launchpad 的 quote 资产**（法务边界）
-
-**其他重要的存疑项**（详见各研究底稿的存疑清单）：
-- pump.fun 2026 年的毕业阈值已不再统一（抽样 3 笔迁移注入 SOL 相差 205 倍），疑与 2026-07 的 BOOST 机制有关，**未获一手确认**
-- Pons 的 anti-snipe 衰减曲线形状与税款去向，源码中未定位；二手称 5 秒与 factory 默认 15 秒**冲突**
-- Pons 的毕业数与毕业率 —— **无可靠数据源**
-- Mantle 2026-04-19 TVL 崩塌（-72%/4 天）的确切成因 —— Kelp DAO rsETH 事件为时间吻合的推断，**无官方复盘**
-- Mantle 强制包含窗口：官方文档写 24 小时，L2Beat 写 "up to 12h"，**未解**
-- **没有任何具名监管机构就「AMM 池交易股票代币」适用何种制度表过态** —— 这是整个赛道最大的悬空风险
+本仓库彻底摒弃将基础设施作为独立孤岛的传统模式：
+- **基础设施没有独立于产品的价值**：脱离了具体交易场景的改链是工程师的自我感动；
+- **各产品定制专属链优化**：
+  - **Launchpad 需要**：转账钩子（Transfer Hook）、出块时间解耦的 Spend-Gate 门禁（`meme-launchpad/chain-infra/`）；
+  - **RFQ 现货需要**：做市商撤单优先通道（Cancel Priority FIFO）、无公开 Mempool 天然抗夹、200ms Flashblocks 预确认（`rfq-propamm/chain-infra/`）；
+  - **股票 Perps 需要**：清算专用保留通道（Dedicated Liquidation Lane）、模拟-免费拒绝（Revert Protection）、预言机与清算原子绑定（`perps/chain-infra/`）；
+  - **Lending 借贷需要**：市场日历预编译（Market Calendar Precompile）、周末动态折价（Weekend Haircut）（`lending/chain-infra/`）；
+  - **Terminal 终端需要**：Passkey 无助记词登录、ERC-4337 Paymaster 全链免 Gas（`terminal/chain-infra/`）。
+- **底层改造技术底气**：Mantle 已经转向 **OP Succinct（SP1 ZK validity proof）**，摆脱了 Optimism 传统 MIPS 单指令仲裁约束，魔改执行层（op-geth / revm）的技术成本与治理风险完全可控（详见 `narrative/04-mantle-opstack-surface.md`）。
 
 ---
 
-## 📌 术语澄清
+## 4. 四大锁定决策（Decision Log）
 
-| 用户用词 | 实际对应 | 说明 |
-|---|---|---|
-| **mStocks** | **xStocks** | 经全面检索，Mantle/Bybit/Backed 一手材料中**不存在 "mStocks" 这一产品名**。真实存在的是 Backed Finance 发行的 **xStocks**，2025-11-07 官宣上 Mantle。用户"类比 Binance bStocks"的直觉正确 —— **bStocks 确实存在**（BTech Holdings 自营，2026-06-11 上 BNB Chain）。 |
-| **Pair** | **PAIR / pair.fund** | Robinhood Chain 上的 multipool RWA launchpad，用 1–5 个股票代币作 quote。**注意**：真正专攻"股票代币作 quote"的是 PAIR 与 **LONG（long.xyz）**；**Pons 是 ETH 计价的通用 meme 工厂（RH Chain 的 pump.fun）**，媒体常混为一谈。 |
-| **Robinhood Chain 上的 Pons** | **Pons Family / ponsfamily.com** | Pons Labs, LLC（匿名团队），**与 Robinhood 完全无关**，Robinhood 官方声明第三方应用"不构成背书"。 |
+| # | 决策点 | 选定方案 | 核心依据 |
+|---|---|---|---|
+| **D1** | **主叙事** | **CeDeFi Capital Markets**；Tagline: **Where Assets Go Public** | 覆盖全部产品支柱、机构友好、对 Bybit 组织变动鲁棒；明确不推泛化的"交易所链" |
+| **D2** | **Perps 路线** | **股票 Perps 优先，Oracle-based 起步** | 通用 crypto perps 面对 Hyperliquid 必败；Mantle 独有现货 xStocks + Fluxion RFQ 真实基差腿；休市定价做成产品而非事故 |
+| **D3** | **Launchpad 范围** | **股票 Quote 专注（Tape 方案）** | 通用 meme 在 Mantle 经历两次关停；meme × 代币化美股经 Robinhood PAIR/LONG 与 BNB bStocks 验证为真实赛道 |
+| **D4** | **Bybit 合作深度** | **全深度：白标 + 做市 + 自营发行 + UTA 打通** | 拆分为四条可独立验收工作流（W1–W4）；主线仅依赖 W1+W2，W3/W4 作为重大战略 Upside |
 
 ---
 
-## 数据可信度约定
+## 5. 全仓库目录与文档完整导航
 
-| 标记 | 含义 |
-|---|---|
-| `【实测】` / `[链上]` | 本研究直接调用 RPC / 合约 / 官方 API 得到，可复现（各底稿附有可复现方法附录） |
-| `[一手]` | 官方文档、官方公告、源码、L2Beat、PR 原文 |
-| `[二手]` | 聚合器、媒体、研究机构转述，未经一手源交叉验证 |
-| `⚠️ 未证实 / 存疑` | 存在源冲突或无法证实，已在各底稿的存疑清单中汇总 |
+### 🏛️ 母目录 1：宏观叙事与产品总路由（[`narrative/`](narrative/)）
+- [`narrative/README.md`](narrative/README.md)：**【高层母篇】** 宏观叙事总纲、各产品矩阵系统介绍与跳转路由、基础设施哲学与 MNT 价值捕获。
+- [`narrative/01-repositioning-and-roadmap.md`](narrative/01-repositioning-and-roadmap.md)：**【决策定稿】** 四大锁定决策全景推导、五支柱业务闭环、三轨路线图与开放问题。
+- [`narrative/02-gap-analysis.md`](narrative/02-gap-analysis.md)：**【现状诊断】** 链空事实、执行层零覆盖、两次失败复盘与六张独有底牌。
+- [`narrative/03-mantle-baseline.md`](narrative/03-mantle-baseline.md)：**【底层实测】** RPC 数据实测、TVL 崩塌序列、28 个 DEX 活跃度审计。
+- [`narrative/04-mantle-opstack-surface.md`](narrative/04-mantle-opstack-surface.md)：**【底层改造面】** OP Succinct（SP1 ZK proof）架构审计与 Treasury 治理预算。
+- [`narrative/05-infra-requirements-framework.md`](narrative/05-infra-requirements-framework.md)：**【需求框架】** 14 维链级基础设施需求框架与 LFM in EVM 阶梯。
 
-**本报告的原则是：宁可标注"不确定"，也不编造收敛。**
-各研究底稿共标注了 **100+ 项**存疑与数据缺口，包括对本研究自己发现的三条互相矛盾的链上证据（pump.fun 2026 毕业阈值异常）不做猜测性收敛。
+---
+
+### 🚀 产品矩阵（每个产品内嵌专属 `chain-infra/`）
+
+#### 支柱 1：发行层（[`meme-launchpad/`](meme-launchpad/)）
+- [`meme-launchpad/README.md`](meme-launchpad/README.md)：代币化股票情绪一级市场总览、Tape 核心机制、北极星 KPI 与反目标。
+- [`meme-launchpad/tape-design.md`](meme-launchpad/tape-design.md)：Tape 协议完整设计方案（xStocks bonding curve、Spend-Gate、双创新 Hook、费用路由）。
+- [`meme-launchpad/xstocks-inputs.md`](meme-launchpad/xstocks-inputs.md)：xStocks 可组合性约束与代币化 IPO 输入。
+- [`meme-launchpad/chain-infra/`](meme-launchpad/chain-infra/)：**【发行层专属链优化】**
+  - [`meme-launchpad/chain-infra/README.md`](meme-launchpad/chain-infra/README.md)：为什么 Launchpad 需要专属链优化。
+  - [`meme-launchpad/chain-infra/issuance-primitives.md`](meme-launchpad/chain-infra/issuance-primitives.md)：资产发行原生链级原语盘点（Token Extensions、转账钩子）。
+- [`meme-launchpad/benchmarks/`](meme-launchpad/benchmarks/)：**【行业竞品全面调研】**
+  - Solana pump.fun 机制与实测、BSC four.meme bStocks 拆解、Base 生态反思、Robinhood Chain Pons/PAIR 深度拆解（共 7 篇文献）。
+
+#### 支柱 2：现货交易层（[`rfq-propamm/`](rfq-propamm/)）
+- [`rfq-propamm/README.md`](rfq-propamm/README.md)：做市商私有库存报价层总览、零补贴做市、28 个 DEX 收敛战略。
+- [`rfq-propamm/fluxion-propamm-spec.md`](rfq-propamm/fluxion-propamm-spec.md)：Fluxion RFQ 泛化架构规格书、EIP-712 签名协议、Bybit W2 库存接入规范与开闭市双模状态机。
+- [`rfq-propamm/chain-infra/`](rfq-propamm/chain-infra/)：**【现货做市专属链优化】**
+  - [`rfq-propamm/chain-infra/README.md`](rfq-propamm/chain-infra/README.md)：做市商专属链优化总览。
+  - [`rfq-propamm/chain-infra/sequencing-and-cancel-priority.md`](rfq-propamm/chain-infra/sequencing-and-cancel-priority.md)：做市商撤单优先队列（Cancel Priority FIFO）与 Flashblocks 预确认。
+  - [`rfq-propamm/chain-infra/mechanism-notes.md`](rfq-propamm/chain-infra/mechanism-notes.md)：做市机制与无公开 mempool 天然抗夹实测数据。
+
+#### 支柱 3：衍生品层（[`perps/`](perps/)）
+- [`perps/README.md`](perps/README.md)：股票 Perps 优先、Oracle-based 起步、现货基差套利与休市定价机制总览。
+- [`perps/chain-infra/`](perps/chain-infra/)：**【衍生品专属链原生支持】**
+  - [`perps/chain-infra/README.md`](perps/chain-infra/README.md)：衍生品专属链原生支持总览。
+  - [`perps/chain-infra/native-chain-support.md`](perps/chain-infra/native-chain-support.md)：三大机制空白（清算专用通道、模拟免拒单、预言机原子绑定）。
+  - [`perps/chain-infra/perps-infra-notes.md`](perps/chain-infra/perps-infra-notes.md)：衍生品链级参数设计底稿。
+  - [`perps/chain-infra/rise-appspecific-teardown.md`](perps/chain-infra/rise-appspecific-teardown.md)：RISE 为 RiseX 做了什么的工程真相（1.5 Ggas 暴力解 CLOB 实测）。
+  - [`perps/chain-infra/rise-chain-infra.md`](perps/chain-infra/rise-chain-infra.md) & [`risex-app-coupling.md`](perps/chain-infra/risex-app-coupling.md)：RISE 节点与应用层拆解。
+  - [`perps/chain-infra/appchain-comparables.md`](perps/chain-infra/appchain-comparables.md)：Hyperliquid、dYdX、Sei 等横向架构对标。
+
+#### 支柱 4：融资层（[`lending/`](lending/)）
+- [`lending/README.md`](lending/README.md)：证券抵押借贷、融资融券业务闭环、激活 $576M 闲置稳定币总览。
+- [`lending/chain-infra/`](lending/chain-infra/)：**【借贷风控专属链优化】**
+  - [`lending/chain-infra/README.md`](lending/chain-infra/README.md)：市场日历预编译（Market Calendar Precompile）、周末动态折价（Weekend Haircut）与预言机休市陈旧度防护。
+
+#### 支柱 5：接口与分发层（[`terminal/`](terminal/)）
+- [`terminal/README.md`](terminal/README.md)：自建 Tape Terminal MVP、Bybit Alpha 白标双前端、打破执行层零覆盖。
+- [`terminal/chain-infra/`](terminal/chain-infra/)：**【终端体验专属链优化】**
+  - [`terminal/chain-infra/README.md`](terminal/chain-infra/README.md)：Mantle Passport（Passkey 社交/生物识别无助记词登录）、Session Key 免弹窗与 ERC-4337 Paymaster 全链免 Gas。
+
+---
+
+### 🏎️ 母目录 2：外部动力挂斗（[`sidecar/`](sidecar/)）
+- [`sidecar/README.md`](sidecar/README.md)：**【Sidecar 协同总纲】** 承销商、做市商、经纪商三位一体架构。
+- [`sidecar/strategy-and-robustness.md`](sidecar/strategy-and-robustness.md)：商务推进策略、稳健性降级预案（主线仅依赖 W1+W2）与对 Byreal 的分工口径。
+- [`sidecar/w1-alpha-whitelabel.md`](sidecar/w1-alpha-whitelabel.md)：W1 经纪商工作流（Bybit Alpha 白标发行引擎接入，8000 万用户直通）。
+- [`sidecar/w2-prop-inventory.md`](sidecar/w2-prop-inventory.md)：W2 做市商工作流（自营库存接入 Fluxion RFQ 与股票 Perps 种子流动性）。
+- [`sidecar/w3-native-bstocks.md`](sidecar/w3-native-bstocks.md)：W3 发行方工作流（bStocks 路线原生自营股票发行，ADGM 招股书与 Backed 双轨制）。
+- [`sidecar/w4-uta-margin.md`](sidecar/w4-uta-margin.md)：W4 主经纪商工作流（UTA 统一交易账户跨链保证金打通，CeDeFi 终极形态）。
+
+---
+
+## 6. 三轨推进路线图（Timeline）
+
+```
+阶段        轨道 A：市场结构 (链 + 现货)          轨道 B：发行与衍生品               轨道 C：Bybit Sidecar 挂斗
+──────────────────────────────────────────────────────────────────────────────────────────────────────────
+P0 核验     Fluxion RFQ 可编程接口确认            Backed 三项核验 (Hook/Multiplier/法务) 四条工作流书面意向; W3 预研
+(0-6周)
+
+P1 底座     Prop AMM 泛化 + 聚合器对接;            曲线合约 + Spend-Gate 审计;        W2 做市库存上线;
+(4-16周)    预确认流 (Flashblocks); Terminal MVP                                    W1 接口打通
+
+P2 点火     做市商撤单优先上线                   Tape Launchpad 上线 (Tier 1 标的);   W1 Alpha 白标上线
+(12-26周)                                        股票 Perps Beta (Oracle-based)
+
+P3 护城河   触发式热点分桶待命                   双创新 Hook (休市熔断 + 公司行动);   Alpha 专区晋级制度化
+(24-38周)                                        xStocks 抵押借贷上线
+
+P4 全栈     —                                    代币化 IPO 曲线; Fee Key 二级市场  W3 自营股票首批标的;
+(36-52周)                                                                           W4 UTA 保证金打通
+```
+
+---
+
+## 7. 北极星 KPI 纪律与反目标
+
+### 🚫 坚决不用的虚假指标与反目标
+- ❌ **坚决不用「日发币量」**：four.meme 发币量仅跌 14% 但日收入暴跌 99%，纯发币量是欺骗性虚荣指标；
+- ❌ **坚决不用「补贴买来的虚假 TVL」**：Aave 在 Mantle 经历的 $137M → $704M → $62M 暴跌已彻底证伪雇佣兵资本；
+- ❌ **不做通用 Meme 曲线**：通用 Meme 在 Mantle 经历 Funny Money / Printr 两次同一周关停，第三次尝试绝无借口；
+- ❌ **不做通用 Crypto Perps**：正面硬刚 Hyperliquid 必败；
+- ❌ **不为 Meme 单开独立 Appchain**：杜绝割裂与主网闲置稳定币及 xStocks 的流动性连接。
+
+### 🎯 真实的北极星 KPI
+1. **发行层**：`每周毕业代币数 × 毕业后 7 天存活率`（P2 验收：毕业 $\ge 3$/周，7天存活率 $\ge 30\%$）；
+2. **现货层**：主流资产对 CEX 买卖点差（$\le 3-5\text{bps}$）与 7×24 报价在线率（$\ge 99.5\%$）；
+3. **衍生层**：未平仓合约规模（OI）与周末/休市时段成交占比；
+4. **融资层**：$576M 稳定币的链上真实借贷利用率；
+5. **接口层**：Tape Terminal DAU 及 Bybit Alpha 白标端贡献成交占比（$\ge 50\%$）。
